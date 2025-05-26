@@ -1,4 +1,67 @@
-FROM ubuntu:latest
-LABEL authors="kamil"
+version: '3.8'
 
-ENTRYPOINT ["top", "-b"]
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: weatheruser
+      POSTGRES_PASSWORD: weatherpass
+      POSTGRES_DB: weatherdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data]
+  spark:
+    build:
+      context: ./spark
+      dockerfile: Dockerfile
+    ports:
+      - "7077:7077"
+      - "8081:8081"
+    volumes:
+      - ./spark:/opt/spark/app
+
+  airflow-webserver:
+    image: apache/airflow:2.7.1
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: 'DikPWMRrJlGCSnD4npzqvcrHjS3l1cPsHEeJfDHt2xY='
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://weatheruser:weatherpass@postgres/weatherdb
+      AIRFLOW__WEBSERVER__RBAC: 'True'
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8081"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    command: webserver
+
+  airflow-scheduler:
+    image: apache/airflow:2.7.1
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://weatheruser:weatherpass@postgres/weatherdb
+    depends_on:
+      - airflow-webserver
+      - postgres
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    command: scheduler
+
+
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.app
+    depends_on:
+      - postgres
+    ports:
+      - "8050:8050"
+
+volumes:
+  pgdata:
